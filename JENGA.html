@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>Jenga: Tomando decisiones para una ciudad sostenible</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Concepto: mesa de juego oscura en rosa palo oscuro. La torre 3D a la izquierda y la carta de evento a la derecha, como en una mesa real. En celular la carta va arriba y la torre abajo. */
+:root{
+  --bg:#552a3d; --bg-2:#6b3850; --line:rgba(255,255,255,.18);
+  --fg:#f8f1f4; --muted:#e6cdd7;
+  --paper:#f8f8f5; --ink:#10242c; --ink-2:#4d626b;
+  --accent:#7fd3e6;
+  --c-rojo:#d8423a; --c-azul:#2e6fdb; --c-verde:#34a853; --c-amarillo:#f4c430; --c-negro:#2d333b; --c-blanco:#f1f1ed;
+  --f-display:"Big Shoulders Display","Arial Narrow","Roboto Condensed",Impact,sans-serif;
+  --f-body:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+[hidden]{display:none!important}
+body{
+  background:var(--bg); color:var(--fg); font:16px/1.5 var(--f-body);
+  padding-block:20px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+.wrap{max-width:1120px; margin:0 auto}
+
+/* Cabecera */
+.top{display:flex; flex-wrap:wrap; gap:16px 24px; align-items:flex-end; justify-content:space-between; margin-bottom:20px}
+.top h1{font:800 clamp(30px,5.4vw,46px)/.98 var(--f-display); text-transform:uppercase; letter-spacing:.01em; margin:0; text-wrap:balance}
+.top p{margin:8px 0 0; color:var(--muted); max-width:46ch}
+.top > div:first-child{flex:1 1 520px; min-width:0}
+.top-tools{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+.stat{display:flex; gap:18px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em}
+.stat b{display:block; font:700 28px/1 var(--f-display); color:var(--fg); letter-spacing:.02em; font-variant-numeric:tabular-nums}
+
+.btn{
+  font:600 15px/1 var(--f-body); padding:13px 20px; border-radius:6px; cursor:pointer;
+  border:2px solid var(--paper); background:var(--paper); color:var(--ink);
+  transition:transform .15s, box-shadow .15s;
+}
+.btn:hover{transform:translateY(-2px); box-shadow:0 3px 0 rgba(255,255,255,.35)}
+.btn.ghost{background:transparent; color:var(--fg); border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--fg); box-shadow:none}
+
+.reglas{margin:0 0 20px; border:1px solid var(--line); border-radius:6px; padding:0 16px}
+.reglas summary{cursor:pointer; padding:12px 0; font-weight:600}
+.reglas ul{margin:0 0 14px; padding-left:20px; color:var(--muted)}
+.reglas li{margin:4px 0}
+.reglas .texto{max-width:72ch; padding-bottom:6px}
+.reglas h3{margin:18px 0 6px; font:700 12px/1.3 var(--f-body); letter-spacing:.12em; text-transform:uppercase; color:var(--fg)}
+.reglas h3:first-child{margin-top:2px}
+.reglas p{margin:0 0 10px; color:var(--muted)}
+.reglas ol{margin:0 0 14px; padding-left:22px; color:var(--muted)}
+.reglas strong{color:var(--fg); font-weight:600}
+
+/* Distribución */
+.grid{display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr); gap:28px; align-items:start}
+.mesa{display:flex; flex-direction:column; gap:16px; min-width:0}
+.torre-col{min-width:0}
+@media (max-width:860px){
+  .grid{grid-template-columns:minmax(0,1fr)}
+  .mesa{order:-1}
+}
+
+/* Escenario 3D */
+.escenario{
+  position:relative; height:560px; overflow:hidden;
+  perspective:1700px; perspective-origin:50% 38%;
+  background:radial-gradient(120% 80% at 50% 100%, #96566f 0%, var(--bg-2) 45%, var(--bg) 100%);
+  border:1px solid var(--line); border-radius:8px;
+  touch-action:pan-y; user-select:none; -webkit-user-select:none; cursor:grab;
+}
+.escenario.arrastrando{cursor:grabbing}
+.escala{position:absolute; left:0; top:0; width:0; height:0; transform-origin:0 0; transform-style:preserve-3d}
+.mundo{position:absolute; left:0; top:0; width:0; height:0; transform-style:preserve-3d; transition:transform .6s cubic-bezier(.2,.7,.2,1)}
+.mundo.arrastrando{transition:none}
+.suelo{
+  position:absolute; left:-190px; top:-190px; width:380px; height:380px; border-radius:50%;
+  background:radial-gradient(circle, #a8667f 0%, #7b4259 55%, rgba(123,66,89,0) 72%);
+  transform:rotateX(90deg) translateZ(-1px);
+}
+.torre{position:absolute; left:0; top:0; width:0; height:0; transform-style:preserve-3d}
+.blk{position:absolute; left:0; top:0; transform-style:preserve-3d; pointer-events:none; transition:transform .6s cubic-bezier(.5,0,.8,.4)}
+.cara{
+  position:absolute; backface-visibility:hidden;
+  background:linear-gradient(var(--sh),var(--sh)),var(--c);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.34), inset 0 0 8px rgba(255,255,255,.05);
+  pointer-events:auto; transition:opacity .4s;
+}
+.f-tp{--sh:rgba(255,255,255,.12)}
+.f-fr{--sh:rgba(0,0,0,0)}
+.f-bk{--sh:rgba(0,0,0,.28)}
+.f-lf,.f-rt{--sh:rgba(0,0,0,.16)}
+.f-bt{--sh:rgba(0,0,0,.4)}
+.blk.saliendo .cara{opacity:0}
+
+.eligiendo .blk.dim .cara{opacity:.16; pointer-events:none}
+.eligiendo .blk.libre .cara{cursor:pointer; animation:brillo 1.4s ease-in-out infinite}
+.eligiendo .blk.libre:hover .cara{background:linear-gradient(rgba(255,255,255,.28),rgba(255,255,255,.28)),var(--c); animation:none; box-shadow:inset 0 0 0 3px var(--accent)}
+@keyframes brillo{
+  0%,100%{box-shadow:inset 0 0 0 2px var(--accent)}
+  50%{box-shadow:inset 0 0 0 3px var(--accent), inset 0 0 14px rgba(127,211,230,.8)}
+}
+
+.stage-tools{display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin:10px 0 14px}
+.stage-tools span{font-size:13px; color:var(--muted)}
+.rot{display:flex; gap:8px}
+.rot button{
+  width:40px; height:40px; display:grid; place-items:center; cursor:pointer;
+  background:transparent; color:var(--fg); border:1px solid var(--line); border-radius:6px;
+}
+.rot button:hover{border-color:var(--fg)}
+.rot svg{width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
+
+.leyenda{list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px}
+.leyenda li{display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:14px}
+.leyenda i{flex:none; width:16px; height:10px; border-radius:2px; border:1px solid rgba(255,255,255,.35)}
+.leyenda span{flex:1; min-width:0; text-transform:capitalize}
+.leyenda b{font-variant-numeric:tabular-nums}
+.leyenda em{font-style:normal; color:var(--muted); font-size:12px}
+.leyenda-t{margin:18px 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted)}
+@media (max-width:420px){ .leyenda{grid-template-columns:repeat(2,minmax(0,1fr))} }
+
+/* Fin de partida */
+.fin{position:absolute; inset:0; z-index:5; display:grid; place-items:center; padding:20px; text-align:center; background:rgba(38,16,26,.86)}
+.fin h2{font:800 clamp(34px,6vw,48px)/.95 var(--f-display); text-transform:uppercase; margin:0 0 10px; text-wrap:balance}
+.fin p{margin:0 auto 20px; max-width:34ch; color:var(--muted)}
+
+/* Carta */
+.carta{width:min(100%,380px); margin:0 auto; perspective:1400px}
+.flip{display:grid; min-height:520px; transform-style:preserve-3d; transition:transform .7s cubic-bezier(.3,.7,.2,1)}
+.flip.abierta{transform:rotateY(180deg)}
+.cara-c{grid-area:1/1; backface-visibility:hidden; min-width:0}
+.dorso{
+  border-radius:16px; padding:12px; display:grid; box-shadow:0 18px 40px rgba(0,0,0,.45);
+  background:repeating-linear-gradient(135deg, var(--c-rojo) 0 12px, var(--c-amarillo) 12px 24px, var(--c-verde) 24px 36px, var(--c-azul) 36px 48px, var(--c-blanco) 48px 60px, var(--c-negro) 60px 72px);
+}
+.dorso-in{
+  background:var(--ink); border:3px solid var(--paper); border-radius:8px;
+  display:grid; place-content:center; justify-items:center; gap:14px; text-align:center; padding:20px;
+}
+.dorso-in svg{width:96px; height:96px}
+.dorso-in strong{font:800 30px/.95 var(--f-display); text-transform:uppercase; letter-spacing:.06em; color:var(--paper)}
+.dorso-in small{font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--accent)}
+.frente{transform:rotateY(180deg)}
+
+.naipe{
+  position:relative; height:100%; display:flex; flex-direction:column; gap:10px;
+  background:var(--paper); color:var(--ink); border-radius:16px; padding:18px 20px 10px;
+  box-shadow:0 18px 40px rgba(0,0,0,.45);
+}
+.naipe::before{content:""; position:absolute; inset:7px; border:1.5px solid var(--acento); border-radius:11px; pointer-events:none}
+.esq{position:absolute; top:16px; left:18px; width:28px; display:flex; flex-direction:column; align-items:center; gap:2px; color:var(--acento)}
+.esq-n{font:800 26px/1 var(--f-display)}
+.esq svg{width:20px; height:20px; fill:currentColor}
+.esq.inv{top:auto; left:auto; bottom:16px; right:18px; transform:rotate(180deg)}
+.naipe header{padding-left:36px; min-height:68px}
+.eyebrow{margin:0 0 2px; font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--acento)}
+.naipe h2{margin:0; font:800 34px/.92 var(--f-display); text-transform:uppercase; text-wrap:balance}
+.dato{display:grid; gap:2px; padding:8px 0; border-block:1.5px solid var(--ink)}
+.dato .num{font:800 54px/.9 var(--f-display); color:var(--acento); font-variant-numeric:tabular-nums}
+.dato .unit{font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase}
+.dato .ctx{font-size:12px; color:var(--ink-2)}
+.relato{margin:0; font-size:14px; line-height:1.45}
+.pregunta{margin:0; font-size:14px; font-weight:700; line-height:1.35}
+.opciones{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:auto}
+.op{
+  display:flex; flex-direction:column; align-items:flex-start; gap:8px; text-align:left; cursor:pointer;
+  background:#fff; color:var(--ink); border:2px solid var(--ink); border-radius:8px; padding:10px; font:inherit; min-width:0;
+  transition:transform .15s, box-shadow .15s;
+}
+.op:hover:not(:disabled){transform:translateY(-2px); box-shadow:0 3px 0 var(--ink)}
+.op:disabled{opacity:.5; cursor:default}
+.op.elegida{opacity:1; background:var(--ink); color:var(--paper)}
+.op.elegida small{color:#c3d3d9}
+.mini{width:36px; height:20px; border-radius:2px; background:var(--c); border:1.5px solid rgba(0,0,0,.6); box-shadow:3px 3px 0 rgba(0,0,0,.25)}
+.op b{display:block; font:800 20px/1 var(--f-display); text-transform:uppercase; letter-spacing:.02em}
+.op small{display:block; margin-top:3px; font-size:11.5px; color:var(--ink-2); line-height:1.3}
+.pie{display:flex; align-items:center; min-height:40px; padding-right:40px; font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-2)}
+.frente-img img{display:block; width:100%; border-radius:14px; box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.frente-img .opciones{margin-top:12px}
+
+/* Avisos e historial */
+.aviso{border:1px solid var(--line); border-radius:8px; padding:14px 16px; display:grid; gap:12px; background:rgba(255,255,255,.03)}
+.aviso p{margin:0}
+.acciones{display:flex; flex-wrap:wrap; gap:10px}
+.hist{list-style:none; margin:0; padding:0; display:grid; gap:6px; font-size:14px; color:var(--muted)}
+.hist li{display:flex; gap:10px; align-items:center}
+.hist i{flex:none; width:14px; height:9px; border-radius:2px; border:1px solid rgba(255,255,255,.35)}
+.hist-t{margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; transition-delay:0s!important}
+}
+</style>
+
+<script>
+/* ============================================================
+   ZONA PARA EDITAR: AQUÍ VAN TUS CARTAS
+   ------------------------------------------------------------
+   Cada carta va entre llaves { ... } y separada por coma.
+   Para agregar otra carta, copia una completa y cambia los textos.
+
+   Los colores de bloque posibles son (en minúscula):
+   "rojo", "azul", "verde", "amarillo", "negro", "blanco"
+
+   Íconos posibles: "gota", "hoja", "casa", "rayo"
+
+   Si tienes la carta hecha en Canva como imagen, guárdala en la
+   misma carpeta que este archivo y escribe su nombre en "imagen",
+   por ejemplo:  imagen: "carta1.png"
+   Si dejas "imagen" vacío (""), la carta se dibuja sola.
+   ============================================================ */
+const CARTAS = [
+  {
+    categoria: "Servicios básicos",
+    titulo: "Corte de agua potable",
+    icono: "gota",
+    acento: "#12707f",
+    cifra: "153,39",
+    unidad: "litros de agua potable por habitante al día",
+    contexto: "Área Metropolitana de Valparaíso",
+    relato: "Durante esta semana ocurrió un corte de suministro de agua potable durante un día. La ciudad cuenta con camiones aljibe para distribuir agua durante la emergencia, pero la cantidad disponible es limitada.",
+    pregunta: "La municipalidad debe decidir dónde priorizar la distribución del agua.",
+    opciones: [
+      { color: "blanco", texto: "Vivienda" },
+      { color: "verde",  texto: "Áreas verdes" }
+    ],
+    imagen: ""
+  }
+];
+</script>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Jenga: Tomando decisiones para una ciudad sostenible</h1>
+      <p>Cada decisión de la comunidad saca un bloque. Ojo con lo que queda en pie.</p>
+    </div>
+    <div class="top-tools">
+      <div class="stat">
+        <div>Ronda<b id="ronda">0</b></div>
+        <div>Bloques<b id="nBloques">54</b></div>
+      </div>
+      <button type="button" class="btn ghost" id="btnReiniciar">Nueva partida</button>
+    </div>
+  </header>
+
+  <details class="reglas">
+    <summary>Cómo se juega</summary>
+    <div class="texto">
+      <h3>La idea del juego</h3>
+      <p>Los 54 bloques de la torre representan los elementos que permiten que una ciudad funcione: <strong>agua, áreas verdes, vivienda, transporte, energía y gestión de residuos (reciclaje)</strong>. Hay 9 bloques de cada elemento, cada uno de un color distinto, y están mezclados al azar.</p>
+
+      <h3>Los eventos</h3>
+      <p>Durante el juego van saliendo cartas con eventos que le ocurren a la ciudad: cortes de agua, aumento de población, olas de calor, problemas de residuos, entre otros. Cada evento afecta a determinados elementos de la ciudad.</p>
+
+      <h3>Cómo se juega una ronda</h3>
+      <ol>
+        <li>Saquen una carta y lean el evento.</li>
+        <li>Decidan qué recurso retirar según las alternativas que entrega la carta. Cada alternativa indica el color del bloque que hay que sacar.</li>
+        <li>Al elegir una alternativa, se iluminan en la torre los bloques de ese color. Toquen uno, o dejen que el azar elija.</li>
+        <li>Registren el evento y la decisión que tomaron. Debajo de la carta aparece un resumen de las últimas decisiones.</li>
+      </ol>
+
+      <h3>Reglas de la torre</h3>
+      <ul>
+        <li>No se puede sacar bloques de la capa más alta.</li>
+        <li>Si una capa queda vacía, o con un solo bloque en un borde, la torre cae.</li>
+        <li><strong>Si la torre cae, la ciudad pierde su estabilidad.</strong></li>
+        <li>Arrastren la torre o usen las flechas para verla desde otro lado.</li>
+      </ul>
+    </div>
+  </details>
+
+  <main class="grid">
+    <section class="torre-col" id="torreCol" aria-label="Torre">
+      <div class="escenario" id="escenario">
+        <div class="escala" id="escala">
+          <div class="mundo" id="mundo">
+            <div class="suelo"></div>
+            <div class="torre" id="torre"></div>
+          </div>
+        </div>
+        <div class="fin" id="fin" hidden>
+          <div>
+            <h2 id="finTitulo"></h2>
+            <p id="finTexto"></p>
+            <button type="button" class="btn" id="btnNueva">Jugar de nuevo</button>
+          </div>
+        </div>
+      </div>
+      <div class="stage-tools">
+        <span>Arrastra para girar la torre</span>
+        <div class="rot">
+          <button type="button" id="rotIzq" aria-label="Girar a la izquierda"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+          <button type="button" id="rotDer" aria-label="Girar a la derecha"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+        </div>
+      </div>
+      <p class="leyenda-t">Bloques que quedan en la torre</p>
+      <ul class="leyenda" id="leyenda"></ul>
+    </section>
+
+    <section class="mesa" id="mesa" aria-label="Carta de evento">
+      <div class="carta">
+        <div class="flip" id="flip">
+          <div class="cara-c dorso" id="dorso" aria-hidden="true">
+            <div class="dorso-in">
+              <svg viewBox="0 0 64 64" aria-hidden="true">
+                <g stroke="#f8f8f5" stroke-width="1">
+                  <rect x="4" y="6" width="17" height="9" fill="var(--c-rojo)"/><rect x="23" y="6" width="17" height="9" fill="var(--c-azul)"/><rect x="42" y="6" width="17" height="9" fill="var(--c-verde)"/>
+                  <rect x="4" y="19" width="17" height="9" fill="var(--c-amarillo)"/><rect x="23" y="19" width="17" height="9" fill="var(--c-blanco)"/><rect x="42" y="19" width="17" height="9" fill="var(--c-rojo)"/>
+                  <rect x="4" y="32" width="17" height="9" fill="var(--c-azul)"/><rect x="23" y="32" width="17" height="9" fill="var(--c-negro)"/><rect x="42" y="32" width="17" height="9" fill="var(--c-amarillo)"/>
+                  <rect x="4" y="45" width="17" height="9" fill="var(--c-verde)"/><rect x="23" y="45" width="17" height="9" fill="var(--c-rojo)"/><rect x="42" y="45" width="17" height="9" fill="var(--c-blanco)"/>
+                </g>
+              </svg>
+              <strong>Jenga</strong>
+              <small>Ciudad sostenible · Carta de evento</small>
+            </div>
+          </div>
+          <div class="cara-c frente" id="frente"></div>
+        </div>
+      </div>
+
+      <div class="aviso" role="status" aria-live="polite">
+        <p id="avisoTxt"></p>
+        <div class="acciones">
+          <button type="button" class="btn" id="btnRobar">Sacar carta</button>
+          <button type="button" class="btn" id="btnAzar" hidden>Elegir bloque al azar</button>
+          <button type="button" class="btn ghost" id="btnVolver" hidden>Cambiar de opción</button>
+        </div>
+      </div>
+
+      <div id="histCaja" hidden>
+        <p class="hist-t">Decisiones de la comunidad</p>
+        <ol class="hist" id="hist" reversed></ol>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var $ = function(id){ return document.getElementById(id); };
+
+  var ORDEN = ['rojo','azul','verde','amarillo','negro','blanco'];
+  var NIVELES = 18, POR_NIVEL = 3, POR_COLOR = 9;
+  var LARGO = 120, ANCHO = 40, ALTO = 24;
+
+  var ICONOS = {
+    gota: '<path d="M12 2.5C12 2.5 5 10 5 14.5a7 7 0 0 0 14 0C19 10 12 2.5 12 2.5z"/>',
+    hoja: '<path d="M4 20C4 10 10 4 21 4c0 10-6 16-17 16z"/>',
+    casa: '<path d="M3 11.5 12 4l9 7.5V20h-6v-6H9v6H3z"/>',
+    rayo: '<path d="M13 2 5 13.5h5L9 22l9-12h-5z"/>'
+  };
+
+  var stage = $('escenario'), escala = $('escala'), mundo = $('mundo'), torreEl = $('torre');
+  var flip = $('flip'), frenteEl = $('frente');
+  var avisoTxt = $('avisoTxt'), btnRobar = $('btnRobar'), btnAzar = $('btnAzar'), btnVolver = $('btnVolver');
+  var leyendaEl = $('leyenda'), histEl = $('hist'), histCaja = $('histCaja');
+  var rondaEl = $('ronda'), bloquesEl = $('nBloques');
+  var finEl = $('fin'), finTitulo = $('finTitulo'), finTexto = $('finTexto');
+
+  var capas = [], conteo = {}, fase = 'inicio';
+  var carta = null, cartaNum = 0, colorElegido = null, opcionElegida = null;
+  var ronda = 0, mazo = [], historial = [], ry = 28, ultimoAncho = 0;
+  var down = null, arrastro = false;
+
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(m){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];
+    });
+  }
+  function barajar(a){
+    for (var i = a.length - 1; i > 0; i--){
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+  function esMovil(){ return window.matchMedia('(max-width: 860px)').matches; }
+
+  /* ---------- Torre ---------- */
+  function colocar(b, extra){
+    b.el.style.transform = 'translate3d(' + b.x + 'px,' + b.y + 'px,' + b.z + 'px)' + (extra || '');
+  }
+
+  function crearBloque(color, i, j){
+    var par = i % 2 === 0;
+    var dx = par ? LARGO - 1.5 : ANCHO - 1.5;
+    var dz = par ? ANCHO - 1.5 : LARGO - 1.5;
+    var dy = ALTO - 1.5;
+    var cx = par ? 0 : (j - 1) * ANCHO;
+    var cz = par ? (j - 1) * ANCHO : 0;
+    var cy = -(i * ALTO + ALTO / 2);
+
+    var el = document.createElement('div');
+    el.className = 'blk';
+    el.style.width = dx + 'px';
+    el.style.height = dy + 'px';
+    el.style.setProperty('--c', 'var(--c-' + color + ')');
+    el.setAttribute('data-capa', i);
+    el.setAttribute('data-pos', j);
+
+    var caras = [
+      ['f-fr', dx, dy, 0, 0, 'translateZ(' + (dz / 2) + 'px)'],
+      ['f-bk', dx, dy, 0, 0, 'rotateY(180deg) translateZ(' + (dz / 2) + 'px)'],
+      ['f-rt', dz, dy, (dx - dz) / 2, 0, 'rotateY(90deg) translateZ(' + (dx / 2) + 'px)'],
+      ['f-lf', dz, dy, (dx - dz) / 2, 0, 'rotateY(-90deg) translateZ(' + (dx / 2) + 'px)'],
+      ['f-tp', dx, dz, 0, (dy - dz) / 2, 'rotateX(90deg) translateZ(' + (dy / 2) + 'px)'],
+      ['f-bt', dx, dz, 0, (dy - dz) / 2, 'rotateX(-90deg) translateZ(' + (dy / 2) + 'px)']
+    ];
+    caras.forEach(function(c){
+      var f = document.createElement('div');
+      f.className = 'cara ' + c[0];
+      f.style.width = c[1] + 'px';
+      f.style.height = c[2] + 'px';
+      f.style.left = c[3] + 'px';
+      f.style.top = c[4] + 'px';
+      f.style.transform = c[5];
+      el.appendChild(f);
+    });
+
+    var b = { color: color, capa: i, pos: j, el: el, par: par, x: cx - dx / 2, y: cy - dy / 2, z: cz };
+    colocar(b);
+    return b;
+  }
+
+  function nuevaTorre(){
+    var colores = [];
+    ORDEN.forEach(function(c){ for (var k = 0; k < POR_COLOR; k++) colores.push(c); });
+    barajar(colores);
+    torreEl.innerHTML = '';
+    torreEl.classList.remove('eligiendo');
+    capas = [];
+    conteo = {};
+    ORDEN.forEach(function(c){ conteo[c] = POR_COLOR; });
+    for (var i = 0; i < NIVELES; i++){
+      var fila = [];
+      for (var j = 0; j < POR_NIVEL; j++){
+        var b = crearBloque(colores[i * POR_NIVEL + j], i, j);
+        fila.push(b);
+        torreEl.appendChild(b.el);
+      }
+      capas.push(fila);
+    }
+    pintarLeyenda();
+  }
+
+  function topeIdx(){
+    for (var i = NIVELES - 1; i >= 0; i--){
+      if (capas[i].some(Boolean)) return i;
+    }
+    return -1;
+  }
+  function libres(color){
+    var t = topeIdx(), r = [];
+    for (var i = 0; i < t; i++){
+      capas[i].forEach(function(b){ if (b && b.color === color) r.push(b); });
+    }
+    return r;
+  }
+  function hayLibres(){
+    return ORDEN.some(function(c){ return libres(c).length > 0; });
+  }
+  function marcarLibres(color){
+    var t = topeIdx();
+    capas.forEach(function(fila, i){
+      fila.forEach(function(b){
+        if (!b) return;
+        var ok = b.color === color && i < t;
+        b.el.classList.toggle('libre', ok);
+        b.el.classList.toggle('dim', !ok);
+      });
+    });
+    torreEl.classList.add('eligiendo');
+  }
+  function limpiarMarcas(){
+    torreEl.classList.remove('eligiendo');
+    capas.forEach(function(fila){
+      fila.forEach(function(b){ if (b) b.el.classList.remove('libre','dim'); });
+    });
+  }
+
+  /* ---------- Vista ---------- */
+  function aplicarVista(){
+    mundo.style.transform = 'rotateX(-18deg) rotateY(' + ry + 'deg)';
+  }
+  function ajustar(){
+    var w = stage.clientWidth;
+    if (!w) return;
+    var k = Math.min(1.12, w / 430);
+    var h = Math.round(560 * k);
+    stage.style.height = h + 'px';
+    escala.style.transform = 'translate3d(' + (w / 2) + 'px,' + (h - 70 * k) + 'px,0) scale(' + k + ')';
+  }
+
+  /* ---------- Leyenda e historial ---------- */
+  function pintarLeyenda(){
+    var total = 0;
+    leyendaEl.innerHTML = ORDEN.map(function(c){
+      total += conteo[c];
+      return '<li><i style="background:var(--c-' + c + ')"></i><span>' + c + '</span><b>' + conteo[c] + '</b><em>/' + POR_COLOR + '</em></li>';
+    }).join('');
+    bloquesEl.textContent = total;
+  }
+  function pintarHistorial(){
+    histCaja.hidden = historial.length === 0;
+    histEl.innerHTML = historial.slice(0, 8).map(function(h){
+      return '<li><i style="background:var(--c-' + h.color + ')"></i><span>Ronda ' + h.n + ' · ' + esc(h.titulo) + ': <strong>' + esc(h.op) + '</strong></span></li>';
+    }).join('');
+  }
+
+  /* ---------- Carta ---------- */
+  function htmlCarta(c, n, sinImagen){
+    var ops = c.opciones.map(function(o, i){
+      return '<button type="button" class="op" data-i="' + i + '" data-color="' + esc(o.color) + '">' +
+        '<span class="mini" style="--c:var(--c-' + esc(o.color) + ')"></span>' +
+        '<span><b>' + esc(o.texto) + '</b><small>Sacar un bloque ' + esc(o.color) + '</small></span></button>';
+    }).join('');
+
+    if (c.imagen && !sinImagen){
+      return '<div class="frente-img"><img src="' + esc(c.imagen) + '" alt="Carta: ' + esc(c.titulo) + '"><div class="opciones">' + ops + '</div></div>';
+    }
+    var icono = '<svg viewBox="0 0 24 24" aria-hidden="true">' + (ICONOS[c.icono] || ICONOS.gota) + '</svg>';
+    var esq = '<span class="esq-n">' + n + '</span>' + icono;
+    return '<article class="naipe" style="--acento:' + esc(c.acento || '#12707f') + '">' +
+      '<div class="esq">' + esq + '</div>' +
+      '<header><p class="eyebrow">Evento · ' + esc(c.categoria) + '</p><h2>' + esc(c.titulo) + '</h2></header>' +
+      '<div class="dato"><span class="num">' + esc(c.cifra) + '</span><span class="unit">' + esc(c.unidad) + '</span><span class="ctx">' + esc(c.contexto) + '</span></div>' +
+      '<p class="relato">' + esc(c.relato) + '</p>' +
+      '<p class="pregunta">' + esc(c.pregunta) + '</p>' +
+      '<div class="opciones">' + ops + '</div>' +
+      '<div class="pie">Jenga · Ciudad sostenible</div>' +
+      '<div class="esq inv">' + esq + '</div>' +
+      '</article>';
+  }
+
+  function prepararOpciones(){
+    var sin = 0, ops = frenteEl.querySelectorAll('.op');
+    ops.forEach(function(b){
+      var col = b.getAttribute('data-color');
+      var n = libres(col).length;
+      b.disabled = n === 0;
+      b.classList.remove('elegida');
+      var s = b.querySelector('small');
+      if (s) s.textContent = n === 0 ? 'Ya no quedan bloques ' + col : 'Sacar un bloque ' + col;
+      if (n === 0) sin++;
+    });
+    return { sin: sin, total: ops.length };
+  }
+
+  function mostrarCarta(sinImagen){
+    frenteEl.innerHTML = htmlCarta(carta, cartaNum, sinImagen);
+    var img = frenteEl.querySelector('img');
+    if (img){
+      img.addEventListener('error', function(){
+        frenteEl.innerHTML = htmlCarta(carta, cartaNum, true);
+        prepararOpciones();
+      });
+    }
+  }
+
+  /* ---------- Flujo ---------- */
+  function avisar(t){ avisoTxt.textContent = t; }
+  function ui(){
+    btnRobar.hidden = !(fase === 'inicio' || fase === 'resuelta');
+    btnRobar.textContent = fase === 'inicio' ? 'Sacar carta' : 'Siguiente carta';
+    btnAzar.hidden = fase !== 'elegir';
+    btnVolver.hidden = fase !== 'elegir';
+    rondaEl.textContent = ronda;
+  }
+  function irA(el){
+    if (esMovil() && el && el.scrollIntoView){
+      try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(e){}
+    }
+  }
+
+  function robar(){
+    if (fase !== 'inicio' && fase !== 'resuelta') return;
+    if (!hayLibres()){ finalizar('enpie'); return; }
+    if (mazo.length === 0) mazo = barajar(CARTAS.map(function(_, i){ return i; }));
+    var idx = mazo.pop();
+    carta = CARTAS[idx];
+    cartaNum = idx + 1;
+    ronda++;
+    colorElegido = null; opcionElegida = null;
+    limpiarMarcas();
+
+    var mostrar = function(){
+      mostrarCarta(false);
+      var r = prepararOpciones();
+      flip.classList.add('abierta');
+      if (r.sin === r.total){
+        fase = 'resuelta';
+        avisar('Ya no quedan bloques que se puedan sacar para esta decisión. Pasa a la siguiente carta.');
+      } else {
+        fase = 'carta';
+        avisar('Lee la carta y elige una opción.');
+      }
+      ui();
+    };
+    fase = 'animando'; ui();
+    if (flip.classList.contains('abierta')){
+      flip.classList.remove('abierta');
+      setTimeout(mostrar, 420);
+    } else {
+      mostrar();
+    }
+  }
+
+  function elegirOpcion(i){
+    if (fase !== 'carta') return;
+    var op = carta.opciones[i];
+    if (libres(op.color).length === 0){
+      avisar('Ya no quedan bloques ' + op.color + ' que se puedan sacar. Elige la otra opción.');
+      return;
+    }
+    colorElegido = op.color;
+    opcionElegida = op;
+    fase = 'elegir';
+    frenteEl.querySelectorAll('.op').forEach(function(b, k){
+      b.disabled = true;
+      b.classList.toggle('elegida', k === i);
+    });
+    marcarLibres(colorElegido);
+    avisar('Elegiste ' + op.texto.toLowerCase() + '. Toca un bloque ' + op.color + ' de la torre, o deja que el azar elija.');
+    ui();
+    irA($('torreCol'));
+  }
+
+  function volver(){
+    if (fase !== 'elegir') return;
+    fase = 'carta';
+    limpiarMarcas();
+    colorElegido = null; opcionElegida = null;
+    prepararOpciones();
+    avisar('Lee la carta y elige una opción.');
+    ui();
+    irA($('mesa'));
+  }
+
+  function sacar(b){
+    if (fase !== 'elegir') return;
+    fase = 'animando'; ui();
+    limpiarMarcas();
+    capas[b.capa][b.pos] = null;
+    conteo[b.color]--;
+    pintarLeyenda();
+    historial.unshift({ n: ronda, titulo: carta.titulo, op: opcionElegida.texto, color: colorElegido });
+    pintarHistorial();
+    b.el.classList.add('saliendo');
+    colocar(b, ' ' + (b.par ? 'translateX' : 'translateZ') + '(' + (LARGO * 1.7) + 'px)');
+    setTimeout(function(){
+      b.el.remove();
+      evaluar(b.capa);
+    }, 650);
+  }
+
+  function evaluar(capa){
+    var restantes = [];
+    capas[capa].forEach(function(b, k){ if (b) restantes.push(k); });
+    var cae = restantes.length === 0 || (restantes.length === 1 && restantes[0] !== 1);
+    if (cae) derrumbar(capa); else resolver();
+  }
+
+  function resolver(){
+    fase = 'resuelta';
+    if (!hayLibres()){
+      finalizar('enpie');
+      return;
+    }
+    avisar('La torre aguantó. Cuando quieras, pasa a la siguiente carta.');
+    ui();
+    irA($('mesa'));
+  }
+
+  function derrumbar(desde){
+    fase = 'animando'; ui();
+    for (var i = desde; i < NIVELES; i++){
+      capas[i].forEach(function(b){
+        if (!b) return;
+        var dx = (Math.random() - .5) * 420, dz = (Math.random() - .5) * 420, dy = i * ALTO + Math.random() * 6;
+        var rot = function(){ return ((Math.random() - .5) * 240).toFixed(0); };
+        b.el.style.transition = 'transform ' + (0.8 + Math.random() * 0.7).toFixed(2) + 's cubic-bezier(.55,.05,.9,.45) ' + (Math.random() * 0.25).toFixed(2) + 's';
+        colocar(b, ' translate3d(' + dx.toFixed(0) + 'px,' + dy.toFixed(0) + 'px,' + dz.toFixed(0) + 'px) rotateX(' + rot() + 'deg) rotateZ(' + rot() + 'deg) rotateY(' + rot() + 'deg)');
+      });
+    }
+    setTimeout(function(){ finalizar('derrumbe'); }, 2000);
+  }
+
+  function finalizar(tipo){
+    fase = 'fin'; ui();
+    if (tipo === 'derrumbe'){
+      var r = Math.max(ronda - 1, 0);
+      finTitulo.textContent = '¡La torre se derrumbó!';
+      finTexto.textContent = 'La comunidad resistió ' + r + (r === 1 ? ' ronda' : ' rondas') + '. La última decisión dejó una capa sin apoyo.';
+    } else {
+      finTitulo.textContent = '¡La torre sigue en pie!';
+      finTexto.textContent = 'Ya no quedan bloques que se puedan sacar. La comunidad llegó hasta la ronda ' + ronda + '.';
+    }
+    finEl.hidden = false;
+    irA($('torreCol'));
+  }
+
+  function reiniciar(){
+    finEl.hidden = true;
+    flip.classList.remove('abierta');
+    frenteEl.innerHTML = '';
+    fase = 'inicio'; ronda = 0; mazo = []; historial = []; carta = null;
+    colorElegido = null; opcionElegida = null;
+    nuevaTorre();
+    pintarHistorial();
+    avisar('La torre tiene 54 bloques mezclados al azar. Saca una carta para empezar.');
+    ui();
+  }
+
+  /* ---------- Eventos ---------- */
+  btnRobar.addEventListener('click', robar);
+  btnVolver.addEventListener('click', volver);
+  btnAzar.addEventListener('click', function(){
+    if (fase !== 'elegir') return;
+    var l = libres(colorElegido);
+    if (l.length) sacar(l[Math.floor(Math.random() * l.length)]);
+  });
+  $('btnReiniciar').addEventListener('click', reiniciar);
+  $('btnNueva').addEventListener('click', reiniciar);
+  $('rotIzq').addEventListener('click', function(){ ry -= 45; aplicarVista(); });
+  $('rotDer').addEventListener('click', function(){ ry += 45; aplicarVista(); });
+
+  frenteEl.addEventListener('click', function(e){
+    var b = e.target.closest ? e.target.closest('.op') : null;
+    if (b && !b.disabled) elegirOpcion(parseInt(b.getAttribute('data-i'), 10));
+  });
+
+  stage.addEventListener('pointerdown', function(e){
+    down = { x: e.clientX, ry: ry };
+    arrastro = false;
+  });
+  window.addEventListener('pointermove', function(e){
+    if (!down) return;
+    var d = e.clientX - down.x;
+    if (!arrastro && Math.abs(d) > 6){
+      arrastro = true;
+      mundo.classList.add('arrastrando');
+      stage.classList.add('arrastrando');
+    }
+    if (arrastro){ ry = down.ry + d * 0.45; aplicarVista(); }
+  });
+  function soltar(){
+    if (!down) return;
+    down = null;
+    mundo.classList.remove('arrastrando');
+    stage.classList.remove('arrastrando');
+    setTimeout(function(){ arrastro = false; }, 0);
+  }
+  window.addEventListener('pointerup', soltar);
+  window.addEventListener('pointercancel', soltar);
+
+  stage.addEventListener('click', function(e){
+    if (arrastro || fase !== 'elegir') return;
+    var el = e.target.closest ? e.target.closest('.blk') : null;
+    if (!el) return;
+    var fila = capas[parseInt(el.getAttribute('data-capa'), 10)];
+    var b = fila && fila[parseInt(el.getAttribute('data-pos'), 10)];
+    if (!b || b.color !== colorElegido || b.capa >= topeIdx()) return;
+    sacar(b);
+  });
+
+  window.addEventListener('resize', ajustar);
+  if (window.ResizeObserver){
+    new ResizeObserver(function(){
+      var w = stage.clientWidth;
+      if (w !== ultimoAncho){ ultimoAncho = w; ajustar(); }
+    }).observe(stage);
+  }
+
+  /* ---------- Inicio ---------- */
+  nuevaTorre();
+  aplicarVista();
+  ajustar();
+  avisar('La torre tiene 54 bloques mezclados al azar. Saca una carta para empezar.');
+  ui();
+})();
+</script>
+
+</body>
+</html>
